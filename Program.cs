@@ -13,12 +13,14 @@ namespace isci.zykluszeit
     {
         static void Main(string[] args)
         {
-            var konfiguration = new Parameter("konfiguration.json");
-            
-            var structure = new Datenstruktur(konfiguration.OrdnerDatenstruktur);
+            var konfiguration = new Parameter(args);
 
-            var dm = new Datenmodell(konfiguration.Identifikation);
-            var zykluszeit = new dtInt32(0, "zykluszeit");
+            var ausfuehrungsmodell = new Ausführungsmodell(konfiguration);
+
+            var structure = new Datenstruktur(konfiguration);
+
+            var dm = new Datenmodell(konfiguration);
+            var zykluszeit = new dtInt32(0, "LetzteZykluszeit");
             dm.Dateneinträge.Add(zykluszeit);
 
             var beschreibung = new Modul(konfiguration.Identifikation, "isci.zykluszeit", new ListeDateneintraege(){zykluszeit});
@@ -31,36 +33,22 @@ namespace isci.zykluszeit
             structure.DatenmodellEinhängen(dm);
             structure.Start();
 
-            var Zustand = new dtInt32(0, "Zustand", konfiguration.OrdnerDatenstruktur + "/Zustand");
-            Zustand.Start();
-
             long curr_ticks = 0;
-
-            bool dbg = System.Environment.UserInteractive;
             
             while(true)
             {
-                System.Threading.Thread.Sleep(10);
-                Zustand.Lesen();
+                structure.Zustand.WertAusSpeicherLesen();
 
-                if (dbg)
-                {
-                    System.Console.Clear();
-                    System.Console.WriteLine("Zustand: " + (System.Int32)Zustand.value);
-                    System.Console.WriteLine("Zykluszeit: " + (System.Int32)zykluszeit.value);
-                }
-
-                var erfüllteTransitionen = konfiguration.Ausführungstransitionen.Where(a => a.Eingangszustand == (System.Int32)Zustand.value);
-                if (erfüllteTransitionen.Count<Ausführungstransition>() > 0)
+                if (ausfuehrungsmodell.ContainsKey((UInt32)structure.Zustand.value))
                 {
                     var curr_ticks_new = System.DateTime.Now.Ticks;
                     var ticks_span = curr_ticks_new - curr_ticks;
                     curr_ticks = curr_ticks_new;
                     zykluszeit.value = (System.Int32)(ticks_span / System.TimeSpan.TicksPerMillisecond);
-                    zykluszeit.Schreiben();
+                    zykluszeit.WertInSpeicherSchreiben();
 
-                    Zustand.value = erfüllteTransitionen.First<Ausführungstransition>().Ausgangszustand;
-                    Zustand.Schreiben();
+                    structure.Zustand.value = ((UInt32)structure.Zustand.value) + 1;
+                    structure.Zustand.WertInSpeicherSchreiben();
                 }
             }
         }
