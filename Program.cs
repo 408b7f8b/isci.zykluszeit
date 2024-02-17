@@ -15,8 +15,6 @@ namespace isci.zykluszeit
         {
             var konfiguration = new Parameter(args);
 
-            var ausfuehrungsmodell = new Ausführungsmodell(konfiguration);
-
             var structure = new Datenstruktur(konfiguration);
 
             var dm = new Datenmodell(konfiguration);
@@ -33,21 +31,22 @@ namespace isci.zykluszeit
             structure.DatenmodellEinhängen(dm);
             structure.Start();
 
+            var ausfuehrungsmodell = new Ausführungsmodell(konfiguration, structure.Zustand);
+
             long curr_ticks = 0;
             
             while(true)
             {
                 structure.Zustand.WertAusSpeicherLesen();
 
-                if (ausfuehrungsmodell.ContainsKey((UInt32)structure.Zustand.value))
-                {
+                if (ausfuehrungsmodell.AktuellerZustandModulAktivieren()){
                     var curr_ticks_new = System.DateTime.Now.Ticks;
                     var ticks_span = curr_ticks_new - curr_ticks;
                     curr_ticks = curr_ticks_new;
-                    zykluszeit.value = (System.Int32)(ticks_span / System.TimeSpan.TicksPerMillisecond);
+                    zykluszeit.Wert = (System.Int32)(ticks_span / System.TimeSpan.TicksPerMillisecond);
                     zykluszeit.WertInSpeicherSchreiben();
 
-                    structure.Zustand.value = ((UInt32)structure.Zustand.value) + 1;
+                    ausfuehrungsmodell.Folgezustand();
                     structure.Zustand.WertInSpeicherSchreiben();
                 }
             }
