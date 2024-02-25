@@ -11,17 +11,28 @@ namespace isci.zykluszeit
 {
     class Program
     {
+        public class Konfiguration : Parameter
+        {
+            [fromArgs, fromEnv]
+            public uint anlaufZyklen = 100;
+            public Konfiguration(string[] args) : base(args) {}
+        }
+
         static void Main(string[] args)
         {
-            var konfiguration = new Parameter("konfiguration.json");
+            var konfiguration = new Konfiguration(args);
             
-            var structure = new Datenstruktur(konfiguration.OrdnerDatenstruktur);
+            var structure = new Datenstruktur(konfiguration);
+            var ausfuehrungsmodell = new Ausführungsmodell(konfiguration, structure.Zustand);
 
             var dm = new Datenmodell(konfiguration.Identifikation);
-            var zykluszeit = new dtInt32(0, "zykluszeit");
-            dm.Dateneinträge.Add(zykluszeit);
 
-            var beschreibung = new Modul(konfiguration.Identifikation, "isci.zykluszeit", new ListeDateneintraege(){zykluszeit});
+            var zykluszeit = new dtDouble(0.0, "zykluszeit");
+            var zykluszeit_max = new dtDouble(0.0, "zykluszeit_max");
+            dm.Dateneinträge.Add(zykluszeit);
+            dm.Dateneinträge.Add(zykluszeit_max);
+
+            var beschreibung = new Modul(konfiguration.Identifikation, "isci.zykluszeit", new ListeDateneintraege(){zykluszeit, zykluszeit_max});
             beschreibung.Name = "Zykluszeit Ressource " + konfiguration.Identifikation;
             beschreibung.Beschreibung = "Modul zur Zykluszeitermittlung";
             beschreibung.Speichern(konfiguration.OrdnerBeschreibungen + "/" + konfiguration.Identifikation + ".json");
@@ -31,37 +42,38 @@ namespace isci.zykluszeit
             structure.DatenmodellEinhängen(dm);
             structure.Start();
 
-            var Zustand = new dtInt32(0, "Zustand", konfiguration.OrdnerDatenstruktur + "/Zustand");
-            Zustand.Start();
+            zykluszeit_max.Wert = 0.0;
+            zykluszeit_max.WertInSpeicherSchreiben();
 
             long curr_ticks = 0;
 
-            bool dbg = System.Environment.UserInteractive;
+            int i = 0;
             
             while(true)
             {
-                System.Threading.Thread.Sleep(10);
-                Zustand.Lesen();
+                structure.Zustand.WertAusSpeicherLesen();
 
-                if (dbg)
-                {
-                    System.Console.Clear();
-                    System.Console.WriteLine("Zustand: " + (System.Int32)Zustand.value);
-                    System.Console.WriteLine("Zykluszeit: " + (System.Int32)zykluszeit.value);
-                }
-
-                var erfüllteTransitionen = konfiguration.Ausführungstransitionen.Where(a => a.Eingangszustand == (System.Int32)Zustand.value);
-                if (erfüllteTransitionen.Count<Ausführungstransition>() > 0)
+                if (ausfuehrungsmodell.AktuellerZustandModulAktivieren())
                 {
                     var curr_ticks_new = System.DateTime.Now.Ticks;
                     var ticks_span = curr_ticks_new - curr_ticks;
                     curr_ticks = curr_ticks_new;
-                    zykluszeit.value = (System.Int32)(ticks_span / System.TimeSpan.TicksPerMillisecond);
-                    zykluszeit.Schreiben();
+                    zykluszeit.Wert = (double)ticks_span / System.TimeSpan.TicksPerMillisecond;
+                    zykluszeit.WertInSpeicherSchreiben();
 
-                    Zustand.value = erfüllteTransitionen.First<Ausführungstransition>().Ausgangszustand;
-                    Zustand.Schreiben();
+                    if (zykluszeit.Wert > zykluszeit_max.Wert && i > konfiguration.anlaufZyklen)
+                    {
+                        zykluszeit_max.Wert = zykluszeit.Wert;
+                        zykluszeit_max.WertInSpeicherSchreiben();
+                    }
+
+                    if (i <= konfiguration.anlaufZyklen) ++i;
+
+                    ausfuehrungsmodell.Folgezustand();
+                    structure.Zustand.WertInSpeicherSchreiben();
                 }
+
+                System.Threading.Thread.Sleep(1);
             }
         }
     }
